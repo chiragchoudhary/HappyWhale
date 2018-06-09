@@ -1,3 +1,11 @@
 #PyCharm file
 
 .idea
+
+
+# Data file
+
+data/*
+
+# Python files
+*.pyc
