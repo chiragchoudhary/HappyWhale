@@ -1,22 +1,29 @@
 import tensorflow as tf
 
 
-def get_batches(images, labels, batch_size=32):
+def process_files(files, labels, shuffle):
+    """Returns a single image tensor."""
+
+    height = 64
+    width = 64
+    num_channels = 3
+
+    filename, label = tf.train.slice_input_producer([files, labels], shuffle=shuffle)
+
+    image = tf.read_file(filename)
+    image = tf.image.decode_jpeg(image, channels=num_channels)
+    image = tf.image.resize_images(image, [height, width])
+    return image, label
+
+
+def get_batches(images, labels, batch_size=32, shuffle=True):
     """Returns a batch of images and their corresponding labels."""
 
-    img_name_batch, labels_batch = tf.train.shuffle_batch(
-                                [images, labels],
+    image, label = process_files(images, labels, shuffle)
+    img_batch, labels_batch = tf.train.batch(
+                                [image, label],
                                 batch_size,
-                                capacity=50000,
-                                min_after_dequeue=10000
+                                capacity=4000,
                                 )
-    images_batch = []
-    for img_file in images:
-        image = tf.image.decode_jpeg(img_file)
 
-        images_batch.append(image)
-
-    images_batch = tf.image.resize_images(images_batch, [32, 32])
-    images_batch = tf.convert_to_tensor(images_batch, dtype=tf.float64)
-
-    return images_batch, labels_batch
+    return img_batch, labels_batch

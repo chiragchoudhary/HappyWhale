@@ -9,3 +9,6 @@ data/*
 
 # Python files
 *.pyc
+
+# Saved models
+/saved_models/*
