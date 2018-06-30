@@ -1,9 +1,9 @@
 import os
 
 import tensorflow as tf
-from processing import get_batches
-#tf.logging.set_verbosity(tf.logging.DEBUG)
-
+from processing import *
+tf.logging.set_verbosity(tf.logging.DEBUG)
+import numpy as np
 
 class CNN:
     """Defines a Convolution Neural Network with 1 convolution layer, and 1 fully connected layer"""
@@ -27,12 +27,14 @@ class CNN:
         # TODO
         return
 
-    def train(self, images, labels, epochs=50):
+    def train(self, images, labels, epochs=10):
         """Trains the model on training data."""
         num_batches = 20
+        print images.shape
+        print labels.shape
         # num_batches = int(len(images)/self.batch_size)
         print "Number of batches per epoch: {}".format(num_batches)
-        loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
+        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
         optimizer = tf.train.AdamOptimizer(0.001)
 
         train_op = optimizer.minimize(loss)
@@ -41,7 +43,7 @@ class CNN:
         saver = tf.train.Saver()
 
         with sess:
-            image_batches, label_batches = get_batches(images, labels, self.batch_size)
+            image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size)
             sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -63,9 +65,9 @@ class CNN:
         sess.close()
 
     def evaluate(self, images, labels):
-        """Evaluates the model on dev/test set."""
+        """Evaluates the model on dev set."""
 
-        num_batches = 20  # int(images.get_shape()[0] / self.batch_size)
+        num_batches = 20  # int(len(images) / self.batch_size)
         saver = tf.train.Saver()
         with tf.Session() as sess:
             saver.restore(sess, os.path.join(os.getcwd(), "saved_models", "{}.ckpt".format(self.model_name)))
@@ -75,23 +77,64 @@ class CNN:
             for v in tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES):
                 print(v)
 
-            image_batches, label_batches = get_batches(images, labels, self.batch_size, shuffle=False)
+            image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size, shuffle=False, num_epochs=1)
 
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(sess=sess, coord=coord)
 
             actual_labels = tf.argmax(label_batches, axis=1)
             predictions = tf.argmax(self.logits, 1)
-            accuracy, _ = tf.metrics.accuracy(actual_labels, predictions, name="my_metric")
-            running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="my_metric")
-            running_vars_initializer = tf.variables_initializer(var_list=running_vars)
-            sess.run(running_vars_initializer)
-            acc = 0
+
+            # compute average precision at k
+            ap = tf.metrics.average_precision_at_k(label_batches, self.logits, 5, name="map")
+            running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="map")
+            sess.run(tf.variables_initializer(var_list=running_vars))
+            map = 0
+            prec = 0
             for j in range(num_batches):
                 img_batch, labels_batch = sess.run([image_batches, label_batches])
-                pred, acc_val = sess.run([predictions, accuracy], feed_dict={self.images: img_batch, self.labels: labels_batch})
-                acc += acc_val
+                prec, _ = sess.run(ap, feed_dict={self.images: img_batch, self.labels: labels_batch})
+                map += prec
 
-        print "Dev set accuracy: {}".format((1.0*acc)/num_batches)
+        print "Dev set mean average precision: {}".format((1.0 * map) / num_batches)
         coord.request_stop()
         sess.close()
+
+    def write_test_output(self, images, k):
+        """Computes predictions for new images, and stores top k results in a csv file."""
+        N = len(images)
+        # num_batches = int(len(images) / self.batch_size)
+        saver = tf.train.Saver()
+        ind = []
+        with tf.Session() as sess:
+            saver.restore(sess, os.path.join(os.getcwd(), "saved_models", "{}.ckpt".format(self.model_name)))
+            print "Model restore successful!!"
+
+            image_batches = get_test_batches(images, 128, num_epochs=1)
+            sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
+            coord = tf.train.Coordinator()
+            tf.train.start_queue_runners(sess=sess, coord=coord)
+            top_k = tf.nn.top_k(self.logits, k=k, sorted=True)
+            while True:
+                try:
+                    image_batch = sess.run(image_batches)
+                    _, indices = sess.run(top_k, feed_dict={self.images: image_batch})
+                    ind.append(indices)
+                except tf.errors.OutOfRangeError:
+                    print "Test data set processed successfully!"
+                    break
+                except Exception as e:
+                    print e
+
+        coord.request_stop()
+        sess.close()
+
+        # Obtain top k predictions for this batch, and append to output.
+        top_k_classes = get_top_k_classes(ind)
+
+        # Write output to a file in Kaggle submission format.
+        submission_df = pd.DataFrame(data={'Image': images, 'Id': top_k_classes})
+        submission_df.to_csv(os.path.join(os.getcwd(), "data", "submission.csv"), columns=['Image', 'Id'], sep=',', index=False)
+
+
+
