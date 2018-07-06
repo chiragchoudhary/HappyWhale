@@ -13,14 +13,14 @@ class CNN:
         self.training_mode = tf.placeholder_with_default(True, shape=())
         self.images = tf.placeholder(tf.float32, shape=[None, 512, 512, 3])
         self.labels = tf.placeholder(tf.float32, shape=[None, 4251])
-        self.out = tf.layers.conv2d(self.images, 64, 3, strides=(2, 2), padding="same")
+        self.out = tf.layers.conv2d(self.images, 1, 3, strides=(2, 2), padding="same")
         self.out = tf.nn.relu(self.out)
         self.out = tf.layers.max_pooling2d(self.out, 2, 2)
         self.out = tf.layers.dropout(self.out, rate=0.15, training=self.training_mode)
-        self.out = tf.layers.conv2d(self.out, 16, 3, strides=(2, 2), padding="same")
+        self.out = tf.layers.conv2d(self.out, 1, 3, strides=(2, 2), padding="same")
         self.out = tf.nn.relu(self.out)
         self.out = tf.layers.max_pooling2d(self.out, 2, 2)
-        self.out = tf.reshape(self.out, [-1, 32 * 32 * 64])
+        self.out = tf.reshape(self.out, [-1, 32 * 32 * 1])
         self.logits = tf.layers.dense(self.out, 4251, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1))
 
     def init(self):
@@ -30,8 +30,10 @@ class CNN:
 
     def train(self, images, labels, epochs=10):
         """Trains the model on training data."""
-        num_batches = 100
-        # num_batches = int(len(images)/self.batch_size)
+
+        stops = 3
+        min_eval_loss = 100000000
+        num_batches = int(len(images)/self.batch_size)
         print "Number of batches per epoch: {}".format(num_batches)
         loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
         l2_loss = tf.losses.get_regularization_loss()
@@ -42,22 +44,36 @@ class CNN:
 
         sess = tf.Session()
         saver = tf.train.Saver()
-        print sess.run(tf.losses.get_regularization_losses())
+
         with sess:
             image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size)
             sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(sess=sess, coord=coord)
 
-            loss_val = 0
             for i in range(epochs):
+                epoch_loss = 0
                 for j in range(num_batches):
                     img_batch, labels_batch = sess.run([image_batches, label_batches])
 
                     _, loss_val = sess.run([train_op, loss],
                                            feed_dict={self.images: img_batch, self.labels: labels_batch})
+                    epoch_loss += loss_val
 
-                print "Average loss for epoch {0}: {1}".format(i+1, loss_val/num_batches)
+                print "Average loss for epoch {0}: {1}".format(i+1, 1.0*epoch_loss/num_batches)
+
+                # early stopping condition
+                if i % 3 == 0:
+                    eval_loss = self.evaluate(images, labels)
+                    if eval_loss > min_eval_loss:
+                        print "No Improvement!!"
+                        stops += 1
+                        if stops == 3:
+                            break
+                    else:
+                        print "Improvement!!"
+                        min_eval_loss = eval_loss
+                        stops = 0
 
             save_path = saver.save(sess, os.path.join(os.getcwd(), "saved_models",
                                    "{}.ckpt".format(self.model_name)))
@@ -67,43 +83,31 @@ class CNN:
         sess.close()
 
     def evaluate(self, images, labels):
-        """Evaluates the model on dev set."""
+        """Evaluates the model on dev set and returns the total loss."""
 
         num_batches = int(len(images) / self.batch_size)
-        saver = tf.train.Saver()
-        with tf.Session() as sess:
-            saver.restore(sess, os.path.join(os.getcwd(), "saved_models", "{}.ckpt".format(self.model_name)))
-            print "Model restore successful!!"
-            for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
-                print(v)
-            for v in tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES):
-                print(v)
-
+        sess = tf.get_default_session()
+        with sess.as_default():
             image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size, shuffle=False,
                                                                num_epochs=1)
-
+            sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(sess=sess, coord=coord)
+            eval_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
 
-            actual_labels = tf.argmax(label_batches, axis=1)
-            predictions = tf.argmax(self.logits, 1)
-
-            # compute average precision at k
-            ap = tf.metrics.average_precision_at_k(label_batches, self.logits, 5, name="map")
-            running_vars = tf.get_collection(tf.GraphKeys.LOCAL_VARIABLES, scope="map")
-            sess.run(tf.variables_initializer(var_list=running_vars))
-            map = 0
-            prec = 0
+            total_loss = 0
             for j in range(num_batches):
                 img_batch, labels_batch = sess.run([image_batches, label_batches])
-                prec, _ = sess.run(ap, feed_dict={self.images: img_batch,
-                                                  self.labels: labels_batch,
-                                                  self.training_mode: False})
-                map += prec
+                loss_value = sess.run(eval_loss, feed_dict={self.images: img_batch,
+                                                            self.labels: labels_batch,
+                                                            self.training_mode: False})
+                total_loss += loss_value
+                print j
 
-        print "Dev set mean average precision: {}".format((1.0 * map) / num_batches)
+        print "Dev set loss: {}".format(total_loss)
         coord.request_stop()
-        sess.close()
+
+        return total_loss
 
     def write_test_output(self, images, k):
         """Computes predictions for new images, and stores top k results in a csv file."""
