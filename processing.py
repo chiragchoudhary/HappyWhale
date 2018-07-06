@@ -31,8 +31,8 @@ def get_train_val_split(labels_file, split_ratio=0.2):
 def process_files(files, labels, shuffle, num_epochs=None):
     """Returns a single image tensor."""
 
-    height = 64
-    width = 64
+    height = 512
+    width = 512
     num_channels = 3
 
     filename, label = tf.train.slice_input_producer([files, labels], shuffle=shuffle, num_epochs=num_epochs)
@@ -71,8 +71,8 @@ def get_jpeg_files(img_dir):
 def get_test_batches(images, batch_size=32, num_epochs=None):
     """Returns a batch of images from test set."""
 
-    height = 64
-    width = 64
+    height = 512
+    width = 512
     num_channels = 3
 
     filename = tf.train.slice_input_producer([images], shuffle=False, num_epochs=num_epochs)[0]
