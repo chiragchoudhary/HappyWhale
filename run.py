@@ -4,7 +4,7 @@ from processing import get_train_val_split, get_jpeg_files
 from models.cnn import CNN
 
 labels_file = os.path.join(os.getcwd(), "data", "train.csv")
-train_X, val_X, train_Y, val_Y = get_train_val_split(labels_file, split_ratio=0)
+train_X, val_X, train_Y, val_Y = get_train_val_split(labels_file, split_ratio=0.1)
 
 model = CNN()
 model.init()

@@ -13,14 +13,14 @@ class CNN:
         self.training_mode = tf.placeholder_with_default(True, shape=())
         self.images = tf.placeholder(tf.float32, shape=[None, 512, 512, 3])
         self.labels = tf.placeholder(tf.float32, shape=[None, 4251])
-        self.out = tf.layers.conv2d(self.images, 1, 3, strides=(2, 2), padding="same")
+        self.out = tf.layers.conv2d(self.images, 32, 3, strides=(2, 2), padding="same")
         self.out = tf.nn.relu(self.out)
         self.out = tf.layers.max_pooling2d(self.out, 2, 2)
         self.out = tf.layers.dropout(self.out, rate=0.15, training=self.training_mode)
-        self.out = tf.layers.conv2d(self.out, 1, 3, strides=(2, 2), padding="same")
+        self.out = tf.layers.conv2d(self.out, 16, 3, strides=(2, 2), padding="same")
         self.out = tf.nn.relu(self.out)
         self.out = tf.layers.max_pooling2d(self.out, 2, 2)
-        self.out = tf.reshape(self.out, [-1, 32 * 32 * 1])
+        self.out = tf.reshape(self.out, [-1, 32 * 32 * 16])
         self.logits = tf.layers.dense(self.out, 4251, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1))
 
     def init(self):
@@ -88,8 +88,7 @@ class CNN:
         num_batches = int(len(images) / self.batch_size)
         sess = tf.get_default_session()
         with sess.as_default():
-            image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size, shuffle=False,
-                                                               num_epochs=1)
+            image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size, shuffle=False)
             sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(sess=sess, coord=coord)
