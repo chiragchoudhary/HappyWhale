@@ -54,7 +54,7 @@ def get_labeled_batches(images, labels, batch_size=32, shuffle=True, num_epochs=
                                 batch_size,
                                 capacity=4000,
                                 allow_smaller_final_batch=True,
-                                num_threads=4
+                                num_threads=12
                                 )
 
     return img_batch, labels_batch

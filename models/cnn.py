@@ -28,7 +28,7 @@ class CNN:
         # TODO
         return
 
-    def train(self, images, labels, epochs=10):
+    def train(self, images, labels, images_eval, labels_eval, epochs=10):
         """Trains the model on training data."""
 
         stops = 3
@@ -64,7 +64,7 @@ class CNN:
 
                 # early stopping condition
                 if i % 3 == 0:
-                    eval_loss = self.evaluate(images, labels)
+                    eval_loss = self.evaluate(images_eval, labels_eval)
                     if eval_loss > min_eval_loss:
                         print "No Improvement!!"
                         stops += 1
@@ -93,7 +93,7 @@ class CNN:
             sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
             coord = tf.train.Coordinator()
             tf.train.start_queue_runners(sess=sess, coord=coord)
-            eval_loss = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
+            eval_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
 
             total_loss = 0
             for j in range(num_batches):
@@ -102,10 +102,8 @@ class CNN:
                                                             self.labels: labels_batch,
                                                             self.training_mode: False})
                 total_loss += loss_value
-                print j
 
-        print "Dev set loss: {}".format(total_loss)
-        coord.request_stop()
+        print "Dev set average loss: {}".format((1.0*total_loss)/num_batches)
 
         return total_loss
 

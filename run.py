@@ -8,11 +8,8 @@ train_X, val_X, train_Y, val_Y = get_train_val_split(labels_file, split_ratio=0)
 
 model = CNN()
 model.init()
-model.train(train_X, train_Y, epochs=50)
+model.train(train_X, train_Y, val_X, val_Y, epochs=50)
 print "model training complete!!"
-print "Evaluating on validation data set.."
-
-# model.evaluate(val_X, val_Y)
 
 # Predict top k labels for test data images, and store in submission format
 k = 5
