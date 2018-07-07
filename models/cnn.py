@@ -22,25 +22,22 @@ class CNN:
         self.out = tf.layers.max_pooling2d(self.out, 2, 2)
         self.out = tf.reshape(self.out, [-1, 32 * 32 * 16])
         self.logits = tf.layers.dense(self.out, 4251, kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=0.1))
-
-    def init(self):
-        """Initialize the model variables."""
-        # TODO
-        return
+        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
+        self.added_eval_node = True
 
     def train(self, images, labels, images_eval, labels_eval, epochs=10):
         """Trains the model on training data."""
 
-        stops = 3
+        stops = 0
         min_eval_loss = 100000000
         num_batches = int(len(images)/self.batch_size)
         print "Number of batches per epoch: {}".format(num_batches)
-        loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
+
         l2_loss = tf.losses.get_regularization_loss()
-        loss += l2_loss
+        l2_loss += self.loss
         optimizer = tf.train.AdamOptimizer(0.001)
 
-        train_op = optimizer.minimize(loss)
+        train_op = optimizer.minimize(l2_loss)
 
         sess = tf.Session()
         saver = tf.train.Saver()
@@ -56,7 +53,7 @@ class CNN:
                 for j in range(num_batches):
                     img_batch, labels_batch = sess.run([image_batches, label_batches])
 
-                    _, loss_val = sess.run([train_op, loss],
+                    _, loss_val = sess.run([train_op, l2_loss],
                                            feed_dict={self.images: img_batch, self.labels: labels_batch})
                     epoch_loss += loss_val
 
@@ -68,7 +65,7 @@ class CNN:
                     if eval_loss > min_eval_loss:
                         print "No Improvement!!"
                         stops += 1
-                        if stops == 3:
+                        if stops == 4:
                             break
                     else:
                         print "Improvement!!"
@@ -88,16 +85,21 @@ class CNN:
         num_batches = int(len(images) / self.batch_size)
         sess = tf.get_default_session()
         with sess.as_default():
-            image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size, shuffle=False)
-            sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
-            coord = tf.train.Coordinator()
-            tf.train.start_queue_runners(sess=sess, coord=coord)
-            eval_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=self.logits))
+            with tf.variable_scope("eval"):
+                if self.added_eval_node:
+                    image_batches = tf.get_default_graph().get_tensor_by_name("labeled_batch_generator:0")
+                    label_batches = tf.get_default_graph().get_tensor_by_name("labeled_batch_generator:1")
+                else:
+                    image_batches, label_batches = get_labeled_batches(images, labels, self.batch_size, shuffle=False)
+                    sess.run(tf.group(tf.local_variables_initializer(), tf.global_variables_initializer()))
+                    coord = tf.train.Coordinator()
+                    tf.train.start_queue_runners(sess=sess, coord=coord)
+                    self.added_eval_node = True
 
             total_loss = 0
             for j in range(num_batches):
                 img_batch, labels_batch = sess.run([image_batches, label_batches])
-                loss_value = sess.run(eval_loss, feed_dict={self.images: img_batch,
+                loss_value = sess.run(self.loss, feed_dict={self.images: img_batch,
                                                             self.labels: labels_batch,
                                                             self.training_mode: False})
                 total_loss += loss_value
